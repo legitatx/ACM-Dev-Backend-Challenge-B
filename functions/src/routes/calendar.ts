@@ -11,7 +11,7 @@ const calendarRouter = Router();
 // Add a POST handler for our event creation CRUD function.
 calendarRouter.post("/create", authenticateToken, calendarFunctions.createEvent);
 // Add a GET handler for our RSVP CRUD function.
-calendarRouter.get("/rsvp", authenticateToken, calendarFunctions.rsvpToEvent);
+calendarRouter.post("/rsvp", authenticateToken, calendarFunctions.rsvpToEvent);
 // Add a GET handler for our participants CRUD function.
 calendarRouter.get("/participants", authenticateToken, calendarFunctions.retrieveParticipantList);
 

@@ -16,7 +16,6 @@ app.use(cors({ origin: true, credentials: true }));
 // Enable middleware to parse request body before request handlers.
 // Enable body parser middleware to parse JSON data matching the Content-Type `application/json` header or URL encoded data as is the case with our Google authentication routes.
 app.use(express.json());
-app.use(express.urlencoded());
 
 // Initialize other security + compression related middleware.
 app.use(helmet());

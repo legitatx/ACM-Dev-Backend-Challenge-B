@@ -1,11 +1,13 @@
 // Import necessary modules.
 import { Response, Request } from "express";
-import moment from "moment";
+import moment from "moment-timezone";
 import { CreateEvent, EventRSVP, ParticipantList } from "../schemas/calendar";
 import { google } from "googleapis";
+import { googleClient } from "../apis/google";
 
 // Initialize a new instance of the Google Calendar API.
 const calendar = google.calendar("v3");
+google.options({ auth: googleClient });
 
 export const createEvent = async (request: Request, response: Response): Promise<void> => {
   // Parse the request body as a CreateEvent type.
@@ -32,7 +34,7 @@ export const createEvent = async (request: Request, response: Response): Promise
   }
 
   // Parse and verify that our start date is valid.
-  const isoStartDate = moment(start_date, "YYYY-MMM-DD hh:mm A");
+  const isoStartDate = moment(start_date, "YYYY-MM-DD hh:mm A");
   if (!isoStartDate.isValid()) {
     response.status(400).json({
       error: "Your start date must be in the format YYYY-MM-DD HH:MM AM/PM.",
@@ -41,7 +43,7 @@ export const createEvent = async (request: Request, response: Response): Promise
   }
 
   // Parse and verify that our end date is valid.
-  const isoEndDate = moment(end_date, "YYYY-MMM-DD hh:mm A");
+  const isoEndDate = moment(end_date, "YYYY-MM-DD hh:mm A");
   if (!isoEndDate.isValid()) {
     response.status(400).json({
       error: "Your end date must be in the format YYYY-MM-DD HH:MM AM/PM.",
@@ -56,10 +58,10 @@ export const createEvent = async (request: Request, response: Response): Promise
       requestBody: {
         summary: event_name,
         start: {
-          dateTime: isoStartDate.toISOString(),
+          dateTime: isoStartDate.tz("America/Chicago").toISOString(),
         },
         end: {
-          dateTime: isoEndDate.toISOString(),
+          dateTime: isoEndDate.tz("America/Chicago").toISOString(),
         },
       },
     })
@@ -105,20 +107,39 @@ export const rsvpToEvent = async (request: Request, response: Response): Promise
       const eventData = await event.data;
 
       /* Add the necessary name to the event's attendees and generate a random email as Google requires an email address to be associated with a specific attendee. If we fetched extra data from the JWT token, it would return the authenticated user's email address and not an attendee's so we use this a possible solution. */
+
       eventData.attendees?.push({
         displayName: attendee_name,
         email: generateRandomEmail(),
       });
 
-      // Inform the user that the RSVP was successful.
-      response.json({
-        message: `Event "${eventData.summary}" was RSVP'd to successfully by ${attendee_name}.`,
-      });
+      // Update the calendar event with the new attendee information.
+      calendar.events
+        .update({
+          calendarId: "primary",
+          eventId: event_id,
+          requestBody: eventData,
+        })
+        .then(async () => {
+          // Inform the user that the RSVP was successful.
+          response.json({
+            message: `Event "${eventData.summary}" was RSVP'd to successfully by ${attendee_name}.`,
+          });
+        })
+        .catch((error) => {
+          // Return an error stating that the cause was most likely due to the user not being logged in or having an invalid event ID on the calendar.
+          console.log(error);
+          response.status(500).json({
+            error: `An error occurred while attempting to update this event on your calendar. Be sure an event with ID (${event_id}) exists on your Google Calendar and that you are logged in with Google.`,
+          });
+          return;
+        });
     })
-    .catch(() => {
-      // Let our error middleware handle any unexpected errors we might face from RSVP'ing to an event.
+    .catch((error) => {
+      // Return an error stating that the cause was most likely due to the user not being logged in or having an invalid event ID on the calendar.
+      console.log(error);
       response.status(500).json({
-        error: `An error occurred while attempting to add this event to your calendar. Be sure an event with ID (${event_id}) exists on your Google Calendar.`,
+        error: `An error occurred while attempting to update this event on your calendar. Be sure an event with ID (${event_id}) exists on your Google Calendar and that you are logged in with Google.`,
       });
       return;
     });
@@ -159,7 +180,9 @@ export const retrieveParticipantList = async (request: Request, response: Respon
       // For each attendee, store their name in a new array and then sort the names in lexicographical order.
       const attendeeNames: string[] = [];
       eventData.attendees.forEach((attendee) => {
-        attendeeNames.push(attendee.displayName as string);
+        if (attendee && attendee.displayName) {
+          attendeeNames.push(attendee.displayName as string);
+        }
       });
       attendeeNames.sort((a, b) => a.toUpperCase().localeCompare(b.toUpperCase()));
 
